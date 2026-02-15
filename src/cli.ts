@@ -8,6 +8,11 @@ import {
   CONFIG_FILE,
   STATE_FILE,
 } from "./types";
+import {
+  runOrchestration,
+  resumeOrchestration,
+  stopOrchestration,
+} from "./orchestrator";
 
 /**
  * Create the CLI program with all commands
@@ -34,24 +39,24 @@ export function createProgram(): Command {
   program
     .command("run")
     .description("Start orchestration (PO conversation, then background agents)")
-    .action(() => {
-      runCommand();
+    .action(async () => {
+      await runCommand();
     });
 
   // stop command
   program
     .command("stop")
     .description("Stop all running agents and save state")
-    .action(() => {
-      stopCommand();
+    .action(async () => {
+      await stopCommand();
     });
 
   // resume command
   program
     .command("resume")
     .description("Resume orchestration from saved state")
-    .action(() => {
-      resumeCommand();
+    .action(async () => {
+      await resumeCommand();
     });
 
   // status command
@@ -105,7 +110,7 @@ function initCommand(repoUrl: string, token: string): void {
 /**
  * Start orchestration
  */
-function runCommand(): void {
+async function runCommand(): Promise<void> {
   // Check if initialized
   if (!fs.existsSync(CONFIG_FILE)) {
     console.error("Error: Orchestrator not initialized.");
@@ -117,51 +122,37 @@ function runCommand(): void {
   const config: Config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
   console.log(`Starting orchestration for: ${config.repoUrl}`);
 
-  // Initialize state
-  const state: State = {
-    phase: "init",
-    blocked: {
-      isBlocked: false,
-      blockedAgent: null,
-      questionFile: null,
-      waitingFor: null,
-    },
-    devSessions: [],
-    currentAgent: null,
-    lastUpdated: new Date().toISOString(),
-  };
+  // Run the orchestration loop
+  const result = await runOrchestration({ verbose: true });
 
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-
-  // TODO: Implement actual orchestration loop
-  console.log("Orchestration started (stub implementation)");
-  console.log("State saved to:", STATE_FILE);
+  if (result.success) {
+    console.log("\nOrchestration completed successfully!");
+    process.exit(0);
+  } else {
+    console.error(`\nOrchestration failed: ${result.error}`);
+    console.log(`Stopped at phase: ${result.finalPhase}`);
+    process.exit(1);
+  }
 }
 
 /**
  * Stop all running agents
  */
-function stopCommand(): void {
+async function stopCommand(): Promise<void> {
   // Check if initialized
   if (!fs.existsSync(STATE_FILE)) {
     console.error("Error: No active orchestration found.");
     process.exit(1);
   }
 
-  // Read and update state
-  const state: State = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
-  state.lastUpdated = new Date().toISOString();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-
-  // TODO: Implement actual process killing
   console.log("Stopping orchestration...");
-  console.log("State saved. Run 'orchestrator resume' to continue.");
+  await stopOrchestration();
 }
 
 /**
  * Resume orchestration from saved state
  */
-function resumeCommand(): void {
+async function resumeCommand(): Promise<void> {
   // Check if state exists
   if (!fs.existsSync(STATE_FILE)) {
     console.error("Error: No saved state found.");
@@ -173,12 +164,17 @@ function resumeCommand(): void {
   const state: State = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
   console.log(`Resuming orchestration from phase: ${state.phase}`);
 
-  // Update state
-  state.lastUpdated = new Date().toISOString();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  // Resume the orchestration loop
+  const result = await resumeOrchestration({ verbose: true });
 
-  // TODO: Implement actual resume logic
-  console.log("Orchestration resumed (stub implementation)");
+  if (result.success) {
+    console.log("\nOrchestration completed successfully!");
+    process.exit(0);
+  } else {
+    console.error(`\nOrchestration failed: ${result.error}`);
+    console.log(`Stopped at phase: ${result.finalPhase}`);
+    process.exit(1);
+  }
 }
 
 /**
